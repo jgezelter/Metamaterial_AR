@@ -1,0 +1,585 @@
+---
+title: "Metamaterial data vis"
+output: pdf_document
+date: "2024-05-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#library
+```{r}
+library(tidyverse)
+library(plotly)
+library(here)
+```
+
+#processing functions
+```{r}
+#get the functions that were made for these sawtooth metamaterial scans
+source(here("R_files/Metamaterial_processing_functions.R"))
+```
+
+#load data
+```{r}
+# XYZ data in absolute coordinates for the machine
+data_height <- read_csv("/Volumes/homes/jgezelter/Metamaterial_AR/Nanovea/24-05-20/200Hz-100LED-40x2-15x15/200Hz-100LED-40x2-15x15_Height.txt", 
+                        col_names = c("X", "Y", "Z"))
+
+# XY Intensity data in absolute coordinates for the machine
+#   if Intensity reads 100 or 0, Z data is much less certain
+data_intensity <- read_csv("/Volumes/homes/jgezelter/Metamaterial_AR/Nanovea/24-05-20/200Hz-100LED-40x2-15x15/200Hz-100LED-40x2-15x15_Intensity.txt", 
+                           col_names = c("X", "Y", "Intensity"))
+
+# This just combines the two data sets into one file
+#   The Nanovea profilometer only generates these files separately
+# The machine writes NA values as -1, the filter command just removes 
+# those, treating them as missing values
+data_full <- left_join(data_height, data_intensity, by = c("X", "Y")) %>% 
+  filter(Z != -1) 
+data_full %>% write_csv("/Volumes/homes/jgezelter/Metamaterial_AR/Nanovea/24-05-20/200Hz-100LED-40x2-15x15/200Hz-100LED-40x2-15x15_Both.txt")
+```
+#separation into regions
+```{r}
+data <- read_csv("/Volumes/homes/jgezelter/Metamaterial_AR/Nanovea/24-05-20/200Hz-100LED-40x2-15x15/200Hz-100LED-40x2-15x15_Both.txt")
+
+# Manual separation into regions, not necessary if there's only one region
+data <- data %>% 
+  mutate(region = case_when(Y > 4 & Y < 8 ~ 1, 
+                            Y > 11 & Y < 16 ~ 2,
+                            Y > 19 & Y < 24 ~ 3,
+                            Y > 25 & Y < 30 ~ 4,
+                            Y > 31 & Y < 35 ~ 5,
+                            Y > 35 & Y < 40 ~ 6))
+data %>% 
+  plot_ly(
+    x = ~X, 
+    y = ~Y, 
+    z = ~Z, 
+    color = ~region
+  )
+
+```
+
+#region 1
+```{r}
+# Takes the first region, and runs the subregion_processor function on it, some points have been deleted because they break the function
+data1 <- data %>% 
+  filter(region == 1, 
+         !(X == 0.81 &
+             Y == 6.315), 
+         !((X %in% c(0.825, 0.87, 0.885)) & 
+             (Y == 6.3 | Y == 6.315)), 
+         !(X == 0.855 & 
+             (Y == 6.315 | Y == 6.33)), 
+         !(X %in% c(1.47, 1.485) & 
+             Y == 5.61), 
+         !(X == 1.56 & 
+             (Y >= 5.61 & Y <= 5.67)),
+         !(X == 1.575 & 
+             (Y >= 5.67 & Y <= 5.715)), 
+         !(X == 1.59 & 
+             (Y >= 5.715 & Y <= 5.745)), 
+         !(X == 1.605 & 
+             (Y >= 5.73 & Y <= 5.775)), 
+         Z < 5474) %>% 
+  subregion_processer(upper = 5161, 
+                      soft_upper = 5050, 
+                      soft_lower = 4225, 
+                      lower = 4201)
+
+# plots the filtered data with each subregion as a different color
+data1 %>% 
+  filter() %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~subregion) %>% 
+  add_markers()
+```
+
+##plane modeling region 1
+```{r}
+# creates new dataframe with 4 columns, subregion, and the coefficients of a plane that models the subregion
+#   Z = planeX * X + planeY * Y + planeI
+# joins this dataframe to the original dataframe, creates columns for the predicted Z values of the planes and the difference between the predicted Z values and actual Z values
+data1m <- data1 %>% 
+  summarize(planeI = lm(Z ~ X + Y)[["coefficients"]][["(Intercept)"]], 
+            planeX = lm(Z ~ X + Y)[["coefficients"]][["X"]], 
+            planeY = lm(Z ~ X + Y)[["coefficients"]][["Y"]], 
+            .by = c(subregion)) %>% 
+  right_join(data1, by = c("subregion")) %>% 
+  mutate(pred_Z = (X * planeX) + (Y * planeY) + planeI, 
+         diff_Z = pred_Z - Z) 
+
+#plots the XYZ data colored by how far off the prediction of Z is 
+data1m %>% 
+  filter(!is.na(subregion)) %>% 
+  plot_ly(x = ~X, 
+            y = ~Y, 
+            z = ~Z,
+            color = ~diff_Z)
+```
+
+
+#region 2
+```{r}
+data2 <- data %>% 
+  filter(region == 2, 
+         !(X == 1.83 & 
+             Y %in% c(13.26, 13.275)), 
+         !(X %in% c(1.89, 1.905, 1.92) & 
+             Y == 13.23),
+         !(X %in% c(1.89, 1.905, 1.92, 1.935) & 
+             (Y >= 13.245 & Y <= 13.275)), 
+         !(X %in% c(1.89, 1.905) & 
+             Y == 13.29),
+         !(X == 1.905 & 
+             Y == 13.305), 
+         !(X == 1.95 & 
+             (Y %in% c(13.185, 13.245, 13.26))), 
+         !(X == 1.965 & 
+             (Y %in% c(13.17, 13.185, 13.245, 13.26))), 
+         !(X == 1.98 & 
+             (Y %in% c(13.17, 13.245, 13.26))), 
+         !(X == 1.995 & 
+             (Y %in% c(13.245, 13.26)))) %>% 
+  subregion_processer(upper = 5230, 
+                      soft_upper = 5050, 
+                      soft_lower = 4150, 
+                      lower = 4150)
+
+data2 %>% 
+  filter() %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~subregion) %>% 
+  add_markers()
+
+data2 %>% 
+  filter(better_topvbot == "top") %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z) %>% 
+  add_markers()
+```
+
+##plane modeling region 2
+```{r}
+data2m <- data2 %>% 
+  summarize(planeI = lm(Z ~ X + Y)[["coefficients"]][["(Intercept)"]], 
+            planeX = lm(Z ~ X + Y)[["coefficients"]][["X"]], 
+            planeY = lm(Z ~ X + Y)[["coefficients"]][["Y"]], 
+            .by = c(subregion)) %>% 
+  right_join(data2, by = c("subregion")) %>% 
+  mutate(pred_Z = (X * planeX) + (Y * planeY) + planeI, 
+         diff_Z = pred_Z - Z) 
+
+data2m %>% 
+  filter(!is.na(subregion)) %>% 
+  plot_ly(x = ~X, 
+            y = ~Y, 
+            z = ~Z,
+            color = ~diff_Z)
+```
+#region 3
+```{r}
+data3 <- data %>% 
+  filter(region == 3, 
+         !(X == 0 & 
+             Y %in% c(20.16, 20.175, 20.205)), 
+         !((X %in% c(0.735, 0.75, 1.965, 1.98)) & 
+             (Y %in% c(21.405, 21.42, 21.435))), 
+         !(X %in% c(0.765, 0.78, 0.795, 1.995) & 
+             Y %in% c(21.42, 21.435)), 
+         !(X == 1.305 & 
+             Y %in% c(20.175, 20.19)), 
+         !(X %in% c(1.95) & 
+             Y %in% c(21.405, 21.42)), 
+         !(X == 0.03 & 
+             Y == 20.235)) %>% 
+  subregion_processer(upper = 5250, 
+                      soft_upper = 5250, 
+                      soft_lower = 4250, 
+                      lower = 4150)
+
+data3 %>% 
+  filter() %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~subregion) %>% 
+  add_markers()
+
+data3 %>% 
+  filter(better_topvbot == "top") %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z) %>% 
+  add_markers()
+
+```
+
+##plane modeling region 3
+```{r}
+data3m <- data3 %>% 
+  summarize(planeI = lm(Z ~ X + Y)[["coefficients"]][["(Intercept)"]], 
+            planeX = lm(Z ~ X + Y)[["coefficients"]][["X"]], 
+            planeY = lm(Z ~ X + Y)[["coefficients"]][["Y"]], 
+            .by = c(subregion)) %>% 
+  right_join(data3, by = c("subregion")) %>% 
+  mutate(pred_Z = (X * planeX) + (Y * planeY) + planeI, 
+         diff_Z = pred_Z - Z) 
+
+data3m %>% 
+  filter(!is.na(subregion)) %>% 
+  plot_ly(x = ~X, 
+            y = ~Y, 
+            z = ~Z,
+            color = ~diff_Z)
+```
+
+#region 4 - ignore
+```{r}
+data4 <- data %>% 
+  filter(region == 4, 
+         !(X == 0 & 
+             Y %in% c(20.16, 20.175, 20.205)), 
+         !((X %in% c(0.735, 0.75, 1.965, 1.98)) & 
+             (Y %in% c(21.405, 21.42, 21.435))), 
+         !(X %in% c(0.765, 0.78, 0.795, 1.995) & 
+             Y %in% c(21.42, 21.435)), 
+         !(X == 1.305 & 
+             Y %in% c(20.175, 20.19)), 
+         !(X %in% c(1.95) & 
+             Y %in% c(21.405, 21.42))) %>% 
+  subregion_processer(upper = 5250, 
+                      soft_upper = 5250, 
+                      soft_lower = 4250, 
+                      lower = 4150)
+
+data4 %>% 
+  filter() %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~subregion) %>% 
+  add_markers()
+
+```
+#region 5
+```{r}
+data5 <- data %>% 
+  filter(region == 5, 
+         !(X %in% c(0.225, 1.68, 1.755) & 
+             Y %in% c(32.115)), 
+         !(X == 0.27 & 
+             Y == 32.7),
+         !(X %in% c(0.255, 0.27) & 
+             Y %in% c(33.33)),
+         !(X %in% c(0.51, 1.395) & 
+             Y == 33.315),
+         !(X %in% c(0.54, 1.44, 1.695, 1.71) & 
+             Y == 32.25),
+         !(X == 0.735 & 
+             Y %in% c(32.76)), 
+         !(X %in% c(0.765, 1.695) & 
+             Y == 32.715),
+         !(X %in% c(0.915, 0.99, 1.02, 1.05, 1.065, 1.095, 1.125, 1.155, 1.665, 
+                    1.725, 1.77, 1.785, 1.815) & 
+             Y == 32.085), 
+         !(X == 1.035 & 
+             Y == 32.055),
+         !(X %in% c(1.065, 1.08, 1.095, 1.755, 1.815) & 
+             Y == 32.07),
+         !(X %in% c(1.17, 1.2, 1.755, 1.77, 1.815) & 
+             Y == 32.13), 
+         !(X %in% c(1.215) & 
+             Y %in% c(32.085, 32.1)), 
+         !(X %in% c(1.23, 0.825, 1.125, 1.155, 1.71, 1.8) & 
+             Y == 32.1), 
+         !(X == 1.215 & 
+             Y %in% c(32.175, 32.19)),
+         !(X == 1.26 & 
+             Y %in% c(33.42, 33.435)), 
+         !(X %in% c(1.305, 1.365) & 
+             Y == 33.435), 
+         !(X == 1.32 & 
+             Y %in% c(33.39, 33.405, 33.435, 33.45)), 
+         !(X == 1.35 & 
+             Y %in% c(32.79, 32.805, 32.82)), 
+         !(X == 1.365 & 
+             Y %in% c(32.22, 32.82, 32.835, 32.85)),
+         !(X %in% c(1.38, 1.455, 1.65, 1.965, 1.995) & 
+             Y == 32.22),
+         !(X == 1.41 & 
+             Y == 32.235),
+         !(X %in% c(1.44, 1.455) & 
+             Y %in% c(32.85, 31.605)), 
+         !(X == 1.56 & 
+             Y == 31.575), 
+         !(X == 1.605 & 
+             Y == 33.375), 
+         !(X == 1.635 & 
+             Y == 31.59),
+         !(X %in% c(1.77, 1.86) & 
+             Y == 32.145),
+         !(X %in% c(1.8, 1.815) & 
+             Y == 32.19),
+         !(X == 1.845 & 
+             Y %in% c(32.805, 32.82, 32.835, 32.85, 32.88)),
+         !(X == 1.86 & 
+             (Y == 33.48) | (Y >= 32.805 & Y <= 32.955)),
+         !(X == 1.98 & 
+             (Y >= 32.19 & Y <= 32.22)),
+         !(X %in% c(1.965, 1.995) & 
+             Y == 32.205),
+         !(X %in% c(0.48, 0.495, 0.525, 0.555, 0.57, 0.585, 0.6, 0.78)), 
+         !(X == 1.815)
+         ) %>% 
+  subregion_processer(upper = 5250, 
+                      soft_upper = 5250, 
+                      soft_lower = 4210, 
+                      lower = 3950)
+
+data5 %>% 
+  filter() %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~subregion) %>% 
+  add_markers()
+
+```
+
+##plane modeling region 5
+```{r}
+data5m <- data5 %>% 
+  summarize(planeI = lm(Z ~ X + Y)[["coefficients"]][["(Intercept)"]], 
+            planeX = lm(Z ~ X + Y)[["coefficients"]][["X"]], 
+            planeY = lm(Z ~ X + Y)[["coefficients"]][["Y"]], 
+            .by = c(subregion)) %>% 
+  right_join(data5, by = c("subregion")) %>% 
+  mutate(pred_Z = (X * planeX) + (Y * planeY) + planeI, 
+         diff_Z = pred_Z - Z) 
+
+data5m %>% 
+  filter(!is.na(subregion)) %>% 
+  plot_ly(x = ~X, 
+            y = ~Y, 
+            z = ~Z,
+            color = ~diff_Z)
+```
+#region 6
+```{r}
+data6 <- data %>% 
+  filter(region == 6, 
+         !(X == 0.255 & 
+             Y == 38.58), 
+         !(X == 0.36 & 
+             Y %in% c(36.645, 37.215)),
+         !(X == 0.465 & 
+             Y %in% c(38.58, 38.595)), 
+         !(X %in% c(1.055, 1.08, 1.095, 1.11, 1.8) & 
+             Y == 37.155),
+         !(X %in% c(1.095, 1.11) & 
+             Y == 37.14),
+         !(X == 1.215 & 
+             Y %in% c(37.17, 37.185)),
+         !(X == 1.89 & 
+             Y == 37.215),
+         !(X %in% c(0.795, 0.825, 0.84, 0.915, 1.845, 1.905) & 
+             Y == 37.26), 
+         !(X %in% c(0.81, 0.825, 0.87, 0.945, 0.96, 1.005) & 
+             Y == 37.245), 
+         !(X %in% c(0.375, 0.84, 0.975, 1.005, 1.02, 1.095, 1.83, 1.845, 1.905) & 
+             Y == 37.275), 
+         !(X %in% c(1.005, 1.02, 1.035, 1.095, 1.215, 1.845) & 
+             Y == 37.29),
+         !(X %in% c(0.975, 1.17, 1.845) & 
+             Y == 37.305), 
+         !(X == 1.32 & 
+             Y == 37.905),
+         !(X %in% c(1.305, 1.335) & 
+             Y == 37.92), 
+         !(X == 1.785 & 
+             Y == 37.935),
+         !(X %in% c(1.53, 1.56) & 
+             Y %in% c(37.785, 37.8)), 
+         !(X == 1.545 & 
+             Y %in% c(36.69, 37.785, 37.8)), 
+         !(X == 0.525 & 
+             Y %in% c(38.565, 38.58)),
+         !(X == 1.605 & 
+             Y == 38.415),
+         !(X %in% c(0.435, 0.45))) %>% 
+  subregion_processer(upper = 5250, 
+                      soft_upper = 5250, 
+                      soft_lower = 4040, 
+                      lower = 3950)
+
+data6 %>% 
+  filter() %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~subregion) %>% 
+  add_markers()
+
+data6 %>% 
+  filter(better_topvbot == "top") %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z) %>% 
+  add_markers()
+
+```
+
+##plane modeling region 6
+```{r}
+data6m <- data6 %>% 
+  summarize(planeI = lm(Z ~ X + Y)[["coefficients"]][["(Intercept)"]], 
+            planeX = lm(Z ~ X + Y)[["coefficients"]][["X"]], 
+            planeY = lm(Z ~ X + Y)[["coefficients"]][["Y"]], 
+            .by = c(subregion)) %>% 
+  right_join(data6, by = c("subregion")) %>% 
+  mutate(pred_Z = (X * planeX) + (Y * planeY) + planeI, 
+         diff_Z = pred_Z - Z) 
+
+data6m %>% 
+  filter(!is.na(subregion)) %>% 
+  plot_ly(x = ~X, 
+            y = ~Y, 
+            z = ~Z,
+            color = ~diff_Z)
+```
+
+#data outputs
+```{r}
+# joins together the dataframes by "stacking" them togther, ie. rows are not matched up
+# summarises to grab only the plane coefficient data  for each subregion
+# creates some columns to describe groupings of planes
+#   bottom 1 describes subregions 1 and 2, bottom 2 describes subregions 3 and 4
+#   top 1 describes subregions 2 and 3, top 2 describes subregions 4 and 5
+#   helperForBottom: 1 is the subregions with down slopes, 2 is the subregions with up slopes
+  
+planes <- bind_rows(data1m, data2m, data3m, data5m, data6m) %>% 
+  filter(!is.na(subregion)) %>% 
+  summarise(I = max(planeI), 
+            X = max(planeX), 
+            Y = max(planeY), 
+            .by = c(region, subregion)) %>% 
+  mutate(bottom = ceiling(subregion / 2), 
+         helperForBottom = ((subregion + 1) %% 2) + 1, 
+         top  = floor(subregion / 2)) 
+
+# finds intersections of planes, then outputs average distance between the intersections in the Z direction
+bottoms <- planes %>% 
+  pivot_wider(id_cols = c(region, bottom), 
+              names_from = c(helperForBottom), 
+              values_from = c(I, X, Y)) %>% 
+  mutate(intZX = (((Y_2 * X_1 / Y_1) - X_2) / ((Y_2 / Y_1) - 1)),
+         intZI = (((Y_2 * I_1 / Y_1) - I_2) / ((Y_2 / Y_1) - 1)), 
+         intYX = ((X_1 - X_2) / (Y_2 - Y_1)), 
+         intYI = ((I_1 - I_2) / (Y_2 - Y_1))) %>% 
+  mutate(left = intYI, 
+         right = intYX * 1.995 + intYI) %>% 
+  mutate(left_diff = lead(left) - left, 
+         right_diff = lead(right) - right, 
+         ave_dist = abs((left_diff + right_diff) / 2), 
+         .by = c(region)) %>% 
+  drop_na(ave_dist) %>% 
+  summarise(ave_dist = mean(ave_dist),
+            sd_dist = sd(ave_dist),
+            .by = c(region))
+
+#average and st dev of angles between subregions in the same bottom and region pair
+angles <- planes %>% 
+  mutate(angle = (90 - abs(atan(Y / 1000)) * 180 / 3.1415926)) %>% 
+  summarise(included_angle = sum(angle), 
+            .by = c(bottom, region)) %>% 
+  summarise(average_angle = mean(included_angle), 
+            sd_angle = sd(included_angle),
+            .by = c(region))
+
+# planes %>% 
+#   mutate(angle = (90 - abs(atan(Y / 1000)) * 180 / 3.1415926)) %>% 
+#   filter() %>% 
+#   ggplot(aes(x = subregion, y = angle)) + 
+#   geom_point() + 
+#   facet_grid(cols = vars(helperForBottom), 
+#              rows = vars(region))
+
+#depth 
+depth <- bind_rows(data1, data2, data3, data5, data6) %>% 
+  mutate(tb_subreg = NA)
+last_down_subreg <- 1
+for(i in 1:nrow(depth)){
+  if(!is.na(depth$type_side[[i]]) & (depth$type_side[[i]] == "down")){
+    last_down_subreg = depth$subregion[[i]]
+  }
+  if(depth$better_topvbot[[i]] != "side"){
+    depth$tb_subreg[[i]] = (last_down_subreg + 1) / 2
+  }
+}
+
+depth_out <- depth %>% 
+  summarise(depth = (max(Z) - min(Z)) / 1000, 
+            .by = c(region, tb_subreg, X)) %>% 
+  drop_na() %>% 
+  summarise(average_depth = mean(depth), 
+            sd_depth = sd(depth), 
+            .by = c(region))
+depth_out
+
+pred <- bind_rows(data1, data2, data3, data5, data6) 
+preds <- data.frame()
+
+for(i in 1:nrow(planes)){
+  preds <- bind_rows(preds, 
+                   pred %>% 
+                     mutate(plane_reg = as.numeric(planes[i, 1]), 
+                            plane_subreg = as.numeric(planes[i, 2]), 
+                            plane_I = as.numeric(planes[i, 3]), 
+                            plane_X = as.numeric(planes[i, 4]), 
+                            plane_Y = as.numeric(planes[i, 5])) %>% 
+                     filter(region == plane_reg))
+}
+
+preds2 <- preds %>% 
+  mutate(pred_Z = (X * plane_X) + (Y * plane_Y) + plane_I, 
+         diff_pred_Z = abs(Z - pred_Z)) %>% 
+  select(!c(plane_I, plane_X, plane_Y, pred_Z)) %>% 
+  pivot_wider(names_from = c(plane_reg, 
+                             plane_subreg), 
+              names_sep = "_", 
+              names_prefix = "diff_pred_",
+              values_from = c(diff_pred_Z)) %>% 
+  mutate(diff_pred = min(c_across(starts_with("diff_pred_")), na.rm = T), 
+         .by = c(X, Y), 
+         .keep = "unused")
+
+preds2 %>% 
+  filter(region == 6, 
+         Z > 5350) %>% 
+  plot_ly(x = ~X, 
+          y = ~Y, 
+          z = ~Z, 
+          color = ~diff_pred) %>% 
+  add_markers()
+
+# Y1y - z = -X1x - I1
+# Y2y - z = -X2x - I2
+# 
+# 
+# -Y1y + Y1z/Y2 = Y1X2x/Y2 + Y1I2/Y2
+# 
+# (Y1/Y2 - 1)z = (Y1X2/Y2 - X1)x + (Y1I2/Y2 - I1)
+# (Y1 - Y2)y = (X2 - X1)x + (I2 - I1)
+
+
+```
+
+
